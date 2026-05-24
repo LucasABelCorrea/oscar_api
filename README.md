@@ -2,20 +2,26 @@
 
 API REST desenvolvida em **Spring Boot** para gerenciamento de **Filmes** e **Atores** indicados ao Oscar. Projeto desenvolvido para fins de estudo na FIAP.
 
+A aplicação foi refatorada para seguir uma separação de responsabilidades mais clara, utilizando **Controllers**, **Services**, **Repositories**, **Models** e **DTOs**.
+
 ---
 
 ## 📋 Sumário
 
 - [Tecnologias Utilizadas](#-tecnologias-utilizadas)
 - [Pré-requisitos](#-pré-requisitos)
+- [Novidades da versão atual](#-novidades-da-versão-atual)
+- [Arquitetura da Aplicação](#-arquitetura-da-aplicação)
 - [Estrutura do Projeto](#-estrutura-do-projeto)
 - [Como rodar a aplicação](#-como-rodar-a-aplicação)
   - [1. Subindo o Banco de Dados com Docker](#1-subindo-o-banco-de-dados-com-docker)
   - [2. Rodando a API Spring Boot](#2-rodando-a-api-spring-boot)
 - [Documentação da API (Swagger)](#-documentação-da-api-swagger)
 - [Endpoints Disponíveis](#-endpoints-disponíveis)
+- [Modelos, DTOs e campos esperados](#-modelos-dtos-e-campos-esperados)
 - [Exemplos de Requisições](#-exemplos-de-requisições)
 - [Encerrando o ambiente](#-encerrando-o-ambiente)
+- [Autor](#-autor)
 
 ---
 
@@ -26,9 +32,11 @@ API REST desenvolvida em **Spring Boot** para gerenciamento de **Filmes** e **At
   - Spring Web MVC
   - Spring Data JPA
   - Spring Boot DevTools
-- **MySQL 8** (via Docker)
+  - Spring Validation
+- **MySQL 8**
 - **Maven** (gerenciador de dependências — wrapper `mvnw` incluído)
 - **Lombok** (redução de boilerplate)
+- **ModelMapper** (mapeamento entre DTOs e Models)
 - **SpringDoc OpenAPI / Swagger UI** (documentação interativa)
 
 ---
@@ -45,9 +53,93 @@ Antes de começar, você precisa ter instalado na sua máquina:
 
 ---
 
+## 🆕 Novidades da versão atual
+
+Esta versão inclui uma refatoração estrutural da API, com foco em organização, manutenção e padronização das entradas e saídas dos endpoints.
+
+### Camada de Service
+
+Foi criada uma camada de serviço para centralizar as regras de acesso e manipulação dos dados:
+
+- `AtorService`
+- `FilmeService`
+
+Os Controllers não acessam mais diretamente os Repositories. Agora eles chamam os Services, que por sua vez utilizam os Repositories para persistência e consulta no banco de dados.
+
+### DTOs de entrada e saída
+
+Foram adicionados DTOs para separar os dados recebidos e retornados pela API dos Models persistidos no banco.
+
+Para **Atores**:
+
+- `AtorCreateRequest`
+- `AtorUpdateRequest`
+- `AtorResponse`
+- `AtorMapper`
+
+Para **Filmes**:
+
+- `FilmeCreateRequest`
+- `FilmeUpdateRequest`
+- `FilmeResponse`
+- `FilmeMapper`
+
+Essa separação evita expor diretamente as entidades JPA nos endpoints e permite controlar melhor quais campos entram no cadastro, quais campos entram na atualização e quais campos são devolvidos na resposta.
+
+### Geração automática de ID no Model
+
+Os identificadores agora são gerados automaticamente pelo banco/JPA com `@GeneratedValue(strategy = GenerationType.AUTO)`:
+
+- `Ator.id`
+- `Filme.id`
+
+Com isso, o campo `id` **não deve ser enviado no corpo das requisições POST**. Ele é retornado pela API depois que o registro é criado.
+
+### Controllers refatorados
+
+Os Controllers foram ajustados para:
+
+- Receber DTOs de request com `@RequestBody`.
+- Validar entradas com `@Valid`.
+- Usar os Mappers para converter DTOs em Models e Models em DTOs de resposta.
+- Delegar operações de criação, consulta, atualização e remoção para a camada de Service.
+- Retornar `ResponseEntity` com status HTTP adequado, como `201 Created`, `200 OK`, `204 No Content` e `404 Not Found`.
+
+---
+
+## 🧱 Arquitetura da Aplicação
+
+A aplicação está organizada em camadas:
+
+| Camada | Responsabilidade |
+|--------|------------------|
+| `controller` | Expõe os endpoints REST e recebe as requisições HTTP. |
+| `dto` | Define objetos de entrada, saída e mapeamento entre DTOs e Models. |
+| `service` | Centraliza a lógica de aplicação e intermedia Controller e Repository. |
+| `repository` | Realiza a comunicação com o banco usando Spring Data JPA. |
+| `model` | Representa as entidades JPA persistidas no banco de dados. |
+
+Fluxo principal da API:
+
+```text
+Requisição HTTP
+      ↓
+Controller
+      ↓
+DTO / Mapper
+      ↓
+Service
+      ↓
+Repository
+      ↓
+Banco de Dados
+```
+
+---
+
 ## 📂 Estrutura do Projeto
 
-```
+```text
 oscar_api/
 ├── src/
 │   └── main/
@@ -56,17 +148,30 @@ oscar_api/
 │       │   ├── controller/
 │       │   │   ├── AtorController.java
 │       │   │   └── FilmeController.java
+│       │   ├── dto/
+│       │   │   ├── AtorCreateRequest.java
+│       │   │   ├── AtorMapper.java
+│       │   │   ├── AtorResponse.java
+│       │   │   ├── AtorUpdateRequest.java
+│       │   │   ├── FilmeCreateRequest.java
+│       │   │   ├── FilmeMapper.java
+│       │   │   ├── FilmeResponse.java
+│       │   │   └── FilmeUpdateRequest.java
 │       │   ├── model/
 │       │   │   ├── Ator.java
 │       │   │   └── Filme.java
-│       │   └── repository/
-│       │       ├── AtorRepository.java
-│       │       └── FilmeRepository.java
+│       │   ├── repository/
+│       │   │   ├── AtorRepository.java
+│       │   │   └── FilmeRepository.java
+│       │   └── service/
+│       │       ├── AtorService.java
+│       │       └── FilmeService.java
 │       └── resources/
 │           └── application.properties
 ├── docker-compose.yml
 ├── pom.xml
 ├── mvnw
+├── mvnw.cmd
 └── README.md
 ```
 
@@ -78,66 +183,23 @@ Siga os passos abaixo na ordem para subir o ambiente do zero.
 
 ### 1. Subindo o Banco de Dados com Docker
 
-A aplicação espera um banco **MySQL** rodando em `localhost:3306` com as seguintes credenciais (definidas em `src/main/resources/application.properties`):
+A aplicação espera um banco **MySQL** rodando em `localhost:3306` com as seguintes credenciais, definidas em `src/main/resources/application.properties`:
 
 | Configuração | Valor |
 |--------------|-------|
-| Host         | `localhost` |
-| Porta        | `3306` |
-| Database     | `api` (criada automaticamente pela aplicação) |
-| Usuário      | `root` |
-| Senha        | `root_pwd` |
+| Host | `localhost` |
+| Porta | `3306` |
+| Database | `api` |
+| Usuário | `root` |
+| Senha | `root_pwd` |
 
-#### 📄 Crie o arquivo `docker-compose.yml` na raiz do projeto
+A URL configurada cria o banco automaticamente se ele ainda não existir:
 
-> ⚠️ **Obrigatório:** se este arquivo ainda não existir no projeto, crie-o com o conteúdo abaixo. Ele é o que garante que qualquer pessoa consiga subir o banco do zero.
-
-```yaml
-version: "3.8"
-
-services:
-  mysql:
-    image: mysql:8.0
-    container_name: oscar_api_mysql
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: root_pwd
-      MYSQL_DATABASE: api
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot_pwd"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-volumes:
-  mysql_data:
+```properties
+spring.datasource.url=jdbc:mysql://localhost:3306/api?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
 ```
 
-#### 🐳 Suba o container
-
-Na raiz do projeto (onde está o `docker-compose.yml`), execute:
-
-```bash
-docker compose up -d
-```
-
-> Em versões mais antigas do Docker, use `docker-compose up -d` (com hífen).
-
-Verifique se o container está rodando corretamente:
-
-```bash
-docker ps
-```
-
-Você deve ver o container `oscar_api_mysql` com status `Up` e `healthy`.
-
-#### 🔧 Alternativa: subindo apenas com `docker run`
-
-Se preferir não usar Docker Compose, pode subir o MySQL diretamente com o comando:
+#### Opção com Docker Run
 
 ```bash
 docker run -d \
@@ -158,11 +220,23 @@ Com o banco de dados rodando, abra um terminal na raiz do projeto e execute:
 ./mvnw spring-boot:run
 ```
 
-> Na primeira execução, o Maven irá baixar todas as dependências — pode levar alguns minutos.
+No Windows:
 
-A aplicação subirá em: **http://localhost:8080**
+```bash
+mvnw.cmd spring-boot:run
+```
 
-As tabelas `filmes` e `atores` serão criadas automaticamente pelo Hibernate (`spring.jpa.hibernate.ddl-auto=update`).
+A aplicação subirá em:
+
+```text
+http://localhost:8080
+```
+
+As tabelas `atores` e `filmes` serão criadas/atualizadas automaticamente pelo Hibernate, conforme a configuração:
+
+```properties
+spring.jpa.hibernate.ddl-auto=update
+```
 
 ---
 
@@ -170,55 +244,228 @@ As tabelas `filmes` e `atores` serão criadas automaticamente pelo Hibernate (`s
 
 Após subir a aplicação, acesse a documentação interativa em:
 
-🔗 **http://localhost:8080/**
+```text
+http://localhost:8080/
+```
 
 A interface do Swagger UI permite testar todos os endpoints diretamente pelo navegador.
 
-A especificação OpenAPI (JSON) está disponível em:
+A especificação OpenAPI em JSON está disponível em:
 
-🔗 **http://localhost:8080/v3/api-docs**
+```text
+http://localhost:8080/v3/api-docs
+```
 
 ---
 
 ## 🔌 Endpoints Disponíveis
 
-Todos os endpoints estão sob o prefixo `/api/v2`.
+Todos os endpoints utilizam o prefixo configurado em `application.properties`:
 
-### Filmes — `/api/v2/filmes`
+```properties
+api.version=v2
+```
 
-| Método | Endpoint                | Descrição                        |
-|--------|-------------------------|----------------------------------|
-| POST   | `/api/v2/filmes`        | Cria um novo filme               |
-| GET    | `/api/v2/filmes`        | Lista todos os filmes            |
-| GET    | `/api/v2/filmes/{id}`   | Busca um filme pelo ID           |
-| PUT    | `/api/v2/filmes/{id}`   | Atualiza um filme existente      |
-| DELETE | `/api/v2/filmes/{id}`   | Remove um filme                  |
+Portanto, o prefixo atual é:
+
+```text
+/api/v2
+```
 
 ### Atores — `/api/v2/atores`
 
-| Método | Endpoint                | Descrição                        |
-|--------|-------------------------|----------------------------------|
-| POST   | `/api/v2/atores`        | Cria um novo ator                |
-| GET    | `/api/v2/atores`        | Lista todos os atores            |
-| GET    | `/api/v2/atores/{id}`   | Busca um ator pelo ID            |
-| PUT    | `/api/v2/atores/{id}`   | Atualiza um ator existente       |
-| DELETE | `/api/v2/atores/{id}`   | Remove um ator                   |
+| Método | Endpoint | Descrição | Body |
+|--------|----------|-----------|------|
+| POST | `/api/v2/atores` | Cria um novo ator | `AtorCreateRequest` |
+| GET | `/api/v2/atores` | Lista todos os atores | Não possui |
+| GET | `/api/v2/atores/{id}` | Busca um ator pelo ID | Não possui |
+| PUT | `/api/v2/atores/{id}` | Atualiza um ator existente | `AtorUpdateRequest` |
+| DELETE | `/api/v2/atores/{id}` | Remove um ator | Não possui |
+
+### Filmes — `/api/v2/filmes`
+
+| Método | Endpoint | Descrição | Body |
+|--------|----------|-----------|------|
+| POST | `/api/v2/filmes` | Cria um novo filme | `FilmeCreateRequest` |
+| GET | `/api/v2/filmes` | Lista todos os filmes | Não possui |
+| GET | `/api/v2/filmes/{id}` | Busca um filme pelo ID | Não possui |
+| PUT | `/api/v2/filmes/{id}` | Atualiza um filme existente | `FilmeUpdateRequest` |
+| DELETE | `/api/v2/filmes/{id}` | Remove um filme | Não possui |
+
+---
+
+## 📦 Modelos, DTOs e campos esperados
+
+### Ator
+
+Entidade persistida: `Ator`
+
+| Campo | Tipo | Observação |
+|-------|------|------------|
+| `id` | `Long` | Gerado automaticamente. |
+| `nome` | `String` | Obrigatório no cadastro. |
+| `numFilmes` | `Integer` | Quantidade de filmes do ator. |
+| `idade` | `Integer` | Idade do ator. |
+| `numOscars` | `Integer` | Quantidade de Oscars recebidos. |
+
+#### `AtorCreateRequest`
+
+Usado no `POST /api/v2/atores`.
+
+```json
+{
+  "nome": "Fernanda Torres",
+  "numFilmes": 30,
+  "idade": 59,
+  "numOscars": 0
+}
+```
+
+#### `AtorUpdateRequest`
+
+Usado no `PUT /api/v2/atores/{id}`.
+
+```json
+{
+  "nome": "Fernanda Torres",
+  "numFilmes": 31,
+  "idade": 59,
+  "numOscars": 0
+}
+```
+
+#### `AtorResponse`
+
+Resposta retornada pela API.
+
+```json
+{
+  "id": 1,
+  "nome": "Fernanda Torres",
+  "numFilmes": 30,
+  "idade": 59,
+  "numOscars": 0
+}
+```
+
+---
+
+### Filme
+
+Entidade persistida: `Filme`
+
+| Campo | Tipo | Observação |
+|-------|------|------------|
+| `id` | `Long` | Gerado automaticamente. |
+| `nome` | `String` | Obrigatório no cadastro. |
+| `numPremiacoes` | `Integer` | Quantidade de premiações recebidas. |
+| `qtdCategoriasDisputadas` | `Integer` | Quantidade de categorias disputadas. |
+| `categoria` | `String` | Categoria principal do filme. |
+
+#### `FilmeCreateRequest`
+
+Usado no `POST /api/v2/filmes`.
+
+```json
+{
+  "nome": "Ainda Estou Aqui",
+  "numPremiacoes": 1,
+  "qtdCategoriasDisputadas": 3,
+  "categoria": "Melhor Filme Internacional"
+}
+```
+
+#### `FilmeUpdateRequest`
+
+Usado no `PUT /api/v2/filmes/{id}`.
+
+```json
+{
+  "nome": "Ainda Estou Aqui",
+  "numPremiacoes": 2,
+  "qtdCategoriasDisputadas": 3,
+  "categoria": "Melhor Filme Internacional"
+}
+```
+
+#### `FilmeResponse`
+
+Resposta retornada pela API.
+
+```json
+{
+  "id": 1,
+  "nome": "Ainda Estou Aqui",
+  "numPremiacoes": 1,
+  "qtdCategoriasDisputadas": 3,
+  "categoria": "Melhor Filme Internacional"
+}
+```
 
 ---
 
 ## 🧪 Exemplos de Requisições
 
+### Criar um Ator
+
+> O campo `id` não deve ser enviado. Ele é gerado automaticamente.
+
+```bash
+curl -X POST http://localhost:8080/api/v2/atores \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nome": "Fernanda Torres",
+    "numFilmes": 30,
+    "idade": 59,
+    "numOscars": 0
+  }'
+```
+
+### Listar Atores
+
+```bash
+curl http://localhost:8080/api/v2/atores
+```
+
+### Buscar Ator por ID
+
+```bash
+curl http://localhost:8080/api/v2/atores/1
+```
+
+### Atualizar um Ator
+
+```bash
+curl -X PUT http://localhost:8080/api/v2/atores/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nome": "Fernanda Torres",
+    "numFilmes": 31,
+    "idade": 59,
+    "numOscars": 0
+  }'
+```
+
+### Remover um Ator
+
+```bash
+curl -X DELETE http://localhost:8080/api/v2/atores/1
+```
+
+---
+
 ### Criar um Filme
+
+> O campo `id` não deve ser enviado. Ele é gerado automaticamente.
 
 ```bash
 curl -X POST http://localhost:8080/api/v2/filmes \
   -H "Content-Type: application/json" \
   -d '{
-    "id": 1,
-    "nome": "Oppenheimer",
-    "numPremiacoes": 7,
-    "qtdCategoriasDisputadas": 13,
-    "categoria": "Melhor Filme"
+    "nome": "Ainda Estou Aqui",
+    "numPremiacoes": 1,
+    "qtdCategoriasDisputadas": 3,
+    "categoria": "Melhor Filme Internacional"
   }'
 ```
 
@@ -234,34 +481,20 @@ curl http://localhost:8080/api/v2/filmes
 curl http://localhost:8080/api/v2/filmes/1
 ```
 
-### Criar um Ator
+### Atualizar um Filme
 
 ```bash
-curl -X POST http://localhost:8080/api/v2/atores \
+curl -X PUT http://localhost:8080/api/v2/filmes/1 \
   -H "Content-Type: application/json" \
   -d '{
-    "id": 1,
-    "nome": "Cillian Murphy",
-    "numFilmes": 35,
-    "idade": 48,
-    "numOscars": 1
+    "nome": "Ainda Estou Aqui",
+    "numPremiacoes": 2,
+    "qtdCategoriasDisputadas": 3,
+    "categoria": "Melhor Filme Internacional"
   }'
 ```
 
-### Atualizar um Ator
-
-```bash
-curl -X PUT http://localhost:8080/api/v2/atores/1 \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nome": "Cillian Murphy",
-    "numFilmes": 36,
-    "idade": 49,
-    "numOscars": 1
-  }'
-```
-
-### Deletar um Filme
+### Remover um Filme
 
 ```bash
 curl -X DELETE http://localhost:8080/api/v2/filmes/1
@@ -271,20 +504,7 @@ curl -X DELETE http://localhost:8080/api/v2/filmes/1
 
 ## 🛑 Encerrando o ambiente
 
-Para parar a aplicação Spring Boot, basta pressionar `Ctrl + C` no terminal onde ela está rodando.
-
-Para parar e remover o container do MySQL:
-
-```bash
-# Parar o container (mantendo os dados)
-docker compose stop
-
-# Parar e remover o container (mantendo os dados no volume)
-docker compose down
-
-# Parar, remover o container E apagar os dados do volume
-docker compose down -v
-```
+Para parar a aplicação Spring Boot, pressione `Ctrl + C` no terminal onde ela está rodando.
 
 Se você usou `docker run` em vez de `docker compose`:
 

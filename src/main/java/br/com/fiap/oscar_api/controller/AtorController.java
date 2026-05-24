@@ -1,7 +1,6 @@
 package br.com.fiap.oscar_api.controller;
 
 import java.util.List;
-import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -15,43 +14,50 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import br.com.fiap.oscar_api.dto.AtorCreateRequest;
+import br.com.fiap.oscar_api.dto.AtorMapper;
+import br.com.fiap.oscar_api.dto.AtorResponse;
+import br.com.fiap.oscar_api.dto.AtorUpdateRequest;
 import br.com.fiap.oscar_api.model.Ator;
-import br.com.fiap.oscar_api.repository.AtorRepository;
+import br.com.fiap.oscar_api.service.AtorService;
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("api/${api.version}/atores")
 public class AtorController {
    
     @Autowired
-    private AtorRepository repository;
+    private AtorService service;
+
+    @Autowired
+    private AtorMapper atorMapper;
 
     //Insert into
     @PostMapping("")
-    public ResponseEntity<Ator> create (@RequestBody Ator ator) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(repository.save(ator));
+    public ResponseEntity<AtorResponse> create (@Valid @RequestBody AtorCreateRequest dtoRequest) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(atorMapper.toDto(service.createOrUpdate(atorMapper.toModel(dtoRequest))));
     }
 
     //Select *
     @GetMapping("")
-    public ResponseEntity<List<Ator>> findAll () {
-        return ResponseEntity.ok(repository.findAll());
+    public ResponseEntity<List<AtorResponse>> findAll () {
+        return ResponseEntity.ok(service.findAll().stream().map(ator -> atorMapper.toDto(ator)).toList());
     }
 
     //Select 
     @GetMapping("/{id}")
-    public ResponseEntity<Ator> findById (@PathVariable Long id) {
-        return repository.findById(id).map(ResponseEntity :: ok).orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<AtorResponse> findById (@PathVariable Long id) {
+        return service.findById(id).map(ator -> atorMapper.toDto(ator)).map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
     }
 
     //Update
     @PutMapping("/{id}")
-    public ResponseEntity<Ator> update (@PathVariable Long id, @RequestBody Ator ator) {
-        Optional<Ator> optAtor = repository.findById(id);
+    public ResponseEntity<AtorResponse> update (@PathVariable Long id,@Valid @RequestBody AtorUpdateRequest dtoRequest) {
 
-        if (optAtor.isPresent()) {
-            ator.setId(id);
-            Ator atorAtualizado = repository.save(ator);
-            return ResponseEntity.ok(atorAtualizado);
+        if (service.findById(id).isPresent()) {
+            Ator atorAtualizado = atorMapper.toModel(id, dtoRequest);
+            atorAtualizado.setId(id);
+            return ResponseEntity.ok(atorMapper.toDto(service.createOrUpdate(atorAtualizado)));
         } else {
             return ResponseEntity.notFound().build();
         }
@@ -61,8 +67,12 @@ public class AtorController {
     //Delete
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteById (@PathVariable Long id) {
-        repository.deleteById(id);
-        return ResponseEntity.noContent().build();
+        if (service.findById(id).isPresent()) {
+            service.deleteById(id);
+            return ResponseEntity.noContent().build();
+        } else {
+            return ResponseEntity.notFound().build();
+        }
     }
 
 }

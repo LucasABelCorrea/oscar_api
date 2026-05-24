@@ -15,43 +15,51 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import br.com.fiap.oscar_api.dto.FilmeCreateRequest;
+import br.com.fiap.oscar_api.dto.FilmeMapper;
+import br.com.fiap.oscar_api.dto.FilmeResponse;
+import br.com.fiap.oscar_api.dto.FilmeUpdateRequest;
 import br.com.fiap.oscar_api.model.Filme;
 import br.com.fiap.oscar_api.repository.FilmeRepository;
+import br.com.fiap.oscar_api.service.FilmeService;
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("api/${api.version}/filmes")
 public class FilmeController {
 
     @Autowired
-    private FilmeRepository repository;
+    private FilmeService service;
+
+    @Autowired
+    private FilmeMapper filmeMapper;
 
     //Insert into
     @PostMapping("")
-    public ResponseEntity<Filme> create (@RequestBody Filme filme) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(repository.save(filme));
+    public ResponseEntity<FilmeResponse> create (@Valid @RequestBody FilmeCreateRequest dtoRequest) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(filmeMapper.toDto(service.createOrUpdate(filmeMapper.toModel(dtoRequest))));
     }
 
     //Select *
     @GetMapping("")
-    public ResponseEntity<List<Filme>> findAll () {
-        return ResponseEntity.ok(repository.findAll());
+    public ResponseEntity<List<FilmeResponse>> findAll () {
+        return ResponseEntity.ok(service.findAll().stream().map(filme -> filmeMapper.toDto(filme)).toList());
     }
 
     //Select 
     @GetMapping("/{id}")
-    public ResponseEntity<Filme> findById (@PathVariable Long id) {
-        return repository.findById(id).map(ResponseEntity :: ok).orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<FilmeResponse> findById (@PathVariable Long id) {
+        return service.findById(id).map(filme -> filmeMapper.toDto(filme)).map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
     }
 
     //Update
     @PutMapping("/{id}")
-    public ResponseEntity<Filme> update (@PathVariable Long id, @RequestBody Filme filme) {
-        Optional<Filme> optFilme = repository.findById(id);
+    public ResponseEntity<FilmeResponse> update (@PathVariable Long id, @Valid @RequestBody FilmeUpdateRequest dtoRequest) {
 
-        if (optFilme.isPresent()) {
-            filme.setId(id);
-            Filme filmeAtualizado = repository.save(filme);
-            return ResponseEntity.ok(filmeAtualizado);
+        if (service.findById(id).isPresent()) {
+            Filme filmeAtualizado = filmeMapper.toModel(id, dtoRequest);
+            filmeAtualizado.setId(id);
+            return ResponseEntity.ok(filmeMapper.toDto(service.createOrUpdate(filmeAtualizado)));
         } else {
             return ResponseEntity.notFound().build();
         }
@@ -61,7 +69,10 @@ public class FilmeController {
     //Delete
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteById (@PathVariable Long id) {
-        repository.deleteById(id);
+        if (service.findById(id).isPresent()) {
+            service.deleteById(id);
+            return ResponseEntity.noContent().build();
+        }
         return ResponseEntity.noContent().build();
     }
     
